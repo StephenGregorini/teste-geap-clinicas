@@ -1,0 +1,8 @@
+{
+  "dependencies": {
+    "@changey/react-leaflet-markercluster": "^4.0.0-rc1",
+    "leaflet": "^1.9.4",
+    "react-leaflet": "^5.0.0",
+    "react-leaflet-cluster": "^4.0.0"
+  }
+}

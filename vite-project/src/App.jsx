@@ -1,319 +1,358 @@
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "./supabaseClient";
-import Logo from "./assets/logo_escuro.svg";
+import Logo from "./assets/logo_claro.svg";
+
+import MapPanel from "./MapPanel";
 
 export default function App() {
-  // CAMPOS
+  const [step, setStep] = useState("inicio");
+  const [operadora, setOperadora] = useState("GEAP");
+
   const [uf, setUf] = useState("");
   const [cidade, setCidade] = useState("");
   const [especialidade, setEspecialidade] = useState("");
 
-  // LISTAS
   const [listaUFs, setListaUFs] = useState([]);
   const [listaCidades, setListaCidades] = useState([]);
   const [listaEspecialidades, setListaEspecialidades] = useState([]);
 
-  // SUGESTÕES
-  const [sugUF, setSugUF] = useState([]);
-  const [sugCidade, setSugCidade] = useState([]);
-  const [sugEsp, setSugEsp] = useState([]);
-
-  // DROPDOWNS
-  const [openUF, setOpenUF] = useState(false);
-  const [openCidade, setOpenCidade] = useState(false);
-  const [openEsp, setOpenEsp] = useState(false);
-
-  // RESULTADOS
-  const [resultados, setResultados] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [resultados, setResultados] = useState([]);
+  const [selectedClinica, setSelectedClinica] = useState(null);
+  const [visibleCount, setVisibleCount] = useState(20);
+  const [userLocation, setUserLocation] = useState(null);
 
-  // REFS PARA FECHAR AO CLICAR FORA
-  const ufRef = useRef();
-  const cidadeRef = useRef();
-  const espRef = useRef();
+  const [mapOpen, setMapOpen] = useState(false);
+  const mapWrapperRef = useRef(null);
 
-  // =====================================================================
-  // FECHAR DROPDOWNS AO CLICAR FORA
-  // =====================================================================
-  useEffect(() => {
-    function handleClickOutside(e) {
-      if (ufRef.current && !ufRef.current.contains(e.target)) setOpenUF(false);
-      if (cidadeRef.current && !cidadeRef.current.contains(e.target)) setOpenCidade(false);
-      if (espRef.current && !espRef.current.contains(e.target)) setOpenEsp(false);
+  function handleNearMeClick() {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const { latitude, longitude } = position.coords;
+          setUserLocation({ lat: latitude, lng: longitude });
+          setMapOpen(true);
+          setTimeout(() => {
+            mapWrapperRef.current?.scrollIntoView({ behavior: "smooth" });
+          }, 200);
+        },
+        (error) => {
+          console.error("Erro ao obter a geolocalização", error);
+          alert("Não foi possível obter sua localização. Verifique as permissões do seu navegador.");
+        }
+      );
+    } else {
+      alert("Geolocalização não é suportada por este navegador.");
     }
+  }
 
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
 
-  // =====================================================================
-  // CARREGAR LISTA DE UF (única)
-  // =====================================================================
   useEffect(() => {
     async function loadUF() {
-      const { data } = await supabase.from("clinicas").select("uf");
-      const ufs = [...new Set(data.map((x) => x.uf))].sort();
-      setListaUFs(ufs);
+      let q = supabase.from("vw_clinicas_busca").select("uf").not("uf", "is", null);
+      if (operadora !== "TODAS") q = q.eq("operadora", operadora);
+
+      const { data } = await q;
+
+      const unique = [...new Set(data.map(x => x.uf?.trim()))].filter(Boolean);
+      setListaUFs(unique.sort());
     }
-    loadUF();
-  }, []);
 
-  // =====================================================================
-  // AO SELECIONAR UF → Buscar cidades válidas
-  // =====================================================================
-  async function carregarCidadesPorUF(ufSelecionada) {
-    const { data } = await supabase
-      .from("clinicas")
-      .select("cidade")
-      .ilike("uf", ufSelecionada);
+    if (step === "busca") loadUF();
+  }, [step, operadora]);
 
-    const cidades = [...new Set(data.map((x) => x.cidade))].sort();
-    setListaCidades(cidades);
+  async function carregarCidadesPorUF(u) {
+    let q = supabase.from("vw_clinicas_busca").select("cidade").eq("uf", u);
+    if (operadora !== "TODAS") q = q.eq("operadora", operadora);
+
+    const { data } = await q;
+    const unique = [...new Set(data.map(x => x.cidade?.trim()))].filter(Boolean);
+    setListaCidades(unique.sort());
   }
 
-  // =====================================================================
-  // AO SELECIONAR CIDADE → Buscar especialidades válidas
-  // =====================================================================
-  async function carregarEspecialidades(ufSel, cidadeSel) {
-    const { data } = await supabase
-      .from("vw_clinicas_especialidades")
+  async function carregarEspecialidades(u, c) {
+    let q = supabase
+      .from("vw_clinicas_busca")
       .select("especialidade")
-      .ilike("uf", ufSel)
-      .ilike("cidade", cidadeSel);
+      .eq("uf", u)
+      .eq("cidade", c);
 
-    const esp = [...new Set(data.map((x) => x.especialidade))].sort();
-    setListaEspecialidades(esp);
+    if (operadora !== "TODAS") q = q.eq("operadora", operadora);
+
+    const { data } = await q;
+
+    const unique = [...new Set(data.map(x => x.especialidade?.trim()))].filter(Boolean);
+    setListaEspecialidades(unique.sort());
   }
 
-  // =====================================================================
-  // FILTROS
-  // =====================================================================
-
-  // UF
   function selecionarUF(u) {
     setUf(u);
-    setOpenUF(false);
-
-    // limpar dependentes
     setCidade("");
     setEspecialidade("");
-    setListaCidades([]);
-    setListaEspecialidades([]);
-
     carregarCidadesPorUF(u);
   }
 
-  // CIDADE
   function selecionarCidade(c) {
     setCidade(c);
-    setOpenCidade(false);
-
-    // limpar dependente
     setEspecialidade("");
-    setListaEspecialidades([]);
-
     carregarEspecialidades(uf, c);
   }
 
-  // ESPECIALIDADE
-  function selecionarEspecialidade(e) {
-    setEspecialidade(e);
-    setOpenEsp(false);
-  }
-
-  // =====================================================================
-  // BUSCAR CLÍNICAS
-  // =====================================================================
   async function buscar() {
     setLoading(true);
-    setResultados([]);
 
-    let q = supabase.from("vw_clinicas_especialidades").select("*");
-
-    if (uf) q = q.ilike("uf", uf);
-    if (cidade) q = q.ilike("cidade", cidade);
+    let q = supabase.from("vw_clinicas_busca").select("*");
+    if (operadora !== "TODAS") q = q.eq("operadora", operadora);
+    if (uf) q = q.eq("uf", uf);
+    if (cidade) q = q.eq("cidade", cidade);
     if (especialidade) q = q.ilike("especialidade", `%${especialidade}%`);
 
     const { data } = await q;
     setLoading(false);
 
-    const agrupado = {};
-    data.forEach((c) => {
-      if (!agrupado[c.clinica_id]) {
-        agrupado[c.clinica_id] = { ...c, especialidades: [] };
+    const grouped = {};
+    data.forEach(c => {
+      if (!grouped[c.clinica_id]) {
+        grouped[c.clinica_id] = { ...c, especialidades: [] };
       }
-      agrupado[c.clinica_id].especialidades.push(c.especialidade);
+      if (c.especialidade && !grouped[c.clinica_id].especialidades.includes(c.especialidade)) {
+        grouped[c.clinica_id].especialidades.push(c.especialidade);
+      }
     });
 
-    setResultados(Object.values(agrupado));
+    const lista = Object.values(grouped);
+    setResultados(lista);
+    setVisibleCount(20);
+    if (lista.length > 0) setSelectedClinica(lista[0]);
   }
 
-  // =====================================================================
-  // UI
-  // =====================================================================
   return (
-    <div className="min-h-screen w-full bg-slate-950 flex flex-col items-center p-10 text-slate-200">
+    <div className="min-h-screen w-full bg-[#F5F6FA] text-[#0F1424] flex flex-col items-center pb-20">
 
-        {/* LOGO */}
-        <div className="flex flex-col items-center mb-10">
-    <img src={Logo} alt="MedSimples" className="h-14 opacity-95" />
-  </div>
-
-
-      <h1 className="text-3xl font-bold text-sky-400 mb-8 text-center">
-        🏥 Busca de Clínicas GEAP
-      </h1>
-
-      {/* FORM */}
-      <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-8 w-full max-w-2xl space-y-6 shadow-xl">
-
-        {/* UF */}
-        <div className="relative" ref={ufRef}>
-          <label className="text-slate-300 text-sm">UF</label>
-          <input
-            className="w-full mt-1 p-3 bg-slate-800 border border-slate-700 rounded-lg text-slate-100 cursor-pointer"
-            readOnly
-            placeholder="Selecione o estado"
-            value={uf}
-            onClick={() => {
-              setOpenUF(!openUF);
-              setOpenCidade(false);
-              setOpenEsp(false);
-              setSugUF(listaUFs);
-            }}
-          />
-
-          {openUF && (
-            <ul className="absolute z-30 bg-slate-900 border border-slate-700 rounded-lg w-full mt-1 max-h-64 overflow-y-auto shadow-xl">
-              {listaUFs.map((u) => (
-                <li
-                  key={u}
-                  className="p-2 hover:bg-slate-700 cursor-pointer"
-                  onClick={() => selecionarUF(u)}
-                >
-                  {u}
-                </li>
-              ))}
-            </ul>
-          )}
+      <header className="w-full bg-white py-4 shadow-sm flex justify-center">
+        <div className="flex items-center gap-3">
+          <img src={Logo} className="h-10" />
         </div>
+      </header>
 
-        {/* CIDADE */}
-        <div className="relative" ref={cidadeRef}>
-          <label className="text-slate-300 text-sm">Cidade</label>
-          <input
-            className={`w-full mt-1 p-3 border rounded-lg ${
-              uf
-                ? "bg-slate-800 border-slate-700 text-slate-100 cursor-pointer"
-                : "bg-slate-800/40 border-slate-700/40 text-slate-600 cursor-not-allowed"
-            }`}
-            placeholder={uf ? "Selecione a cidade" : "Selecione UF primeiro"}
-            readOnly
-            disabled={!uf}
-            value={cidade}
-            onClick={() => {
-              if (!uf) return;
-              setOpenCidade(!openCidade);
-              setOpenUF(false);
-              setOpenEsp(false);
-              setSugCidade(listaCidades);
-            }}
-          />
+      <div className="w-full max-w-6xl mt-10 px-4">
 
-          {openCidade && uf && (
-            <ul className="absolute z-30 bg-slate-900 border border-slate-700 rounded-lg w-full mt-1 max-h-64 overflow-y-auto shadow-xl">
-              {listaCidades.map((c) => (
-                <li
-                  key={c}
-                  className="p-2 hover:bg-slate-700 cursor-pointer"
-                  onClick={() => selecionarCidade(c)}
-                >
-                  {c}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+        {step === "inicio" && (
+          <div className="bg-white border border-[#E4E6EA] rounded-2xl shadow-md p-12">
+            <h1 className="text-center text-4xl font-bold text-[#0F1424]">
+              Encontre Clínicas
+            </h1>
 
-        {/* ESPECIALIDADE */}
-        <div className="relative" ref={espRef}>
-          <label className="text-slate-300 text-sm">Especialidade</label>
-          <input
-            className={`w-full mt-1 p-3 border rounded-lg ${
-              cidade
-                ? "bg-slate-800 border-slate-700 text-slate-100 cursor-pointer"
-                : "bg-slate-800/40 border-slate-700/40 text-slate-600 cursor-not-allowed"
-            }`}
-            readOnly
-            disabled={!cidade}
-            placeholder={
-              cidade ? "Selecione especialidade" : "Selecione cidade primeiro"
-            }
-            value={especialidade}
-            onClick={() => {
-              if (!cidade) return;
-              setOpenEsp(!openEsp);
-              setOpenUF(false);
-              setOpenCidade(false);
-              setSugEsp(listaEspecialidades);
-            }}
-          />
+            <p className="text-center text-lg text-[#5A6275] mt-3 mb-12">
+              Você possui algum convênio?
+            </p>
 
-          {openEsp && cidade && (
-            <ul className="absolute z-30 bg-slate-900 border border-slate-700 rounded-lg w-full mt-1 max-h-64 overflow-y-auto shadow-xl">
-              {listaEspecialidades.map((e) => (
-                <li
-                  key={e}
-                  className="p-2 hover:bg-slate-700 cursor-pointer"
-                  onClick={() => selecionarEspecialidade(e)}
-                >
-                  {e}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <button
+                onClick={() => { setOperadora("GEAP"); setStep("busca"); }}
+                className="bg-[#F2F3F5] hover:bg-[#E9EAED] text-[#0F1424] font-semibold py-5 rounded-2xl border border-[#E4E6EA]"
+              >
+                GEAP
+              </button>
 
-        {/* BOTÃO */}
-        <button
-          onClick={buscar}
-          className="w-full bg-sky-500 hover:bg-sky-600 text-slate-900 font-semibold p-3 rounded-lg shadow-lg transition"
-          disabled={!uf || !cidade}
-        >
-          Buscar Clínicas
-        </button>
-      </div>
+              <button
+                onClick={() => { setOperadora("AMIL"); setStep("busca"); }}
+                className="bg-[#F2F3F5] hover:bg-[#E9EAED] text-[#0F1424] font-semibold py-5 rounded-2xl border border-[#E4E6EA]"
+              >
+                AMIL
+              </button>
 
-      {/* RESULTADOS */}
-      <div className="mt-10 w-full max-w-4xl space-y-4">
-        {loading && (
-          <p className="text-slate-400 text-lg animate-pulse">
-            Carregando resultados...
-          </p>
+              <button
+                onClick={() => { setOperadora("TODAS"); setStep("busca"); }}
+                className="bg-[#F2F3F5] hover:bg-[#E9EAED] text-[#0F1424] font-semibold py-5 rounded-2xl border border-[#D7D9DF]"
+              >
+                Nenhum / Outro
+              </button>
+            </div>
+          </div>
         )}
 
-        {resultados.map((c) => (
-          <div
-            key={c.clinica_id}
-            className="bg-slate-900/60 border border-slate-800 rounded-xl p-6 shadow-xl"
-          >
-            <h2 className="text-xl font-bold text-sky-300">{c.nome_fantasia}</h2>
+        {step === "busca" && (
+          <div className="space-y-10">
 
-            <p className="text-slate-400 text-sm">
-              {c.logradouro} {c.numero || ""}, {c.bairro}
-            </p>
-            <p className="text-slate-400 text-sm">
-              {c.cidade} - {c.uf}
-            </p>
+            <div className="flex justify-between items-center">
+              <div>
+                <h2 className="text-3xl font-bold">Buscar Clínicas</h2>
+                <p className="mt-1 text-[#5A6275]">
+                  Operadora selecionada:{" "}
+                  <span className="text-[#0C77E1] font-semibold">
+                    {operadora === "TODAS" ? "Todas" : operadora}
+                  </span>
+                </p>
+              </div>
 
-            <p className="mt-3 text-sky-200 text-sm">
-              <span className="font-semibold text-sky-400">
-                Especialidades:
-              </span>{" "}
-              {c.especialidades.join(", ")}
-            </p>
+              <button
+                onClick={() => setStep("inicio")}
+                className="px-4 py-2 rounded-xl border border-[#D7D9DF] text-[#0F1424] bg-white hover:bg-[#F2F3F5]"
+              >
+                ← Trocar convênio
+              </button>
+            </div>
+
+            <div className="bg-white border border-[#E4E6EA] rounded-2xl shadow-sm p-8 space-y-6">
+
+              <div>
+                <label className="font-medium">UF</label>
+                <select
+                  className="w-full p-3 border border-[#D7D9DF] rounded-xl mt-1"
+                  value={uf}
+                  onChange={(e) => selecionarUF(e.target.value)}
+                >
+                  <option value="">Selecione</option>
+                  {listaUFs.map((u) => <option key={u}>{u}</option>)}
+                </select>
+              </div>
+
+              <div>
+                <label className="font-medium">Cidade</label>
+                <select
+                  className="w-full p-3 border border-[#D7D9DF] rounded-xl mt-1"
+                  disabled={!uf}
+                  value={cidade}
+                  onChange={(e) => selecionarCidade(e.target.value)}
+                >
+                  <option value="">Selecione</option>
+                  {listaCidades.map((c) => <option key={c}>{c}</option>)}
+                </select>
+              </div>
+
+              <div>
+                <label className="font-medium">Especialidade</label>
+                <select
+                  className="w-full p-3 border border-[#D7D9DF] rounded-xl mt-1"
+                  disabled={!cidade}
+                  value={especialidade}
+                  onChange={(e) => setEspecialidade(e.target.value)}
+                >
+                  <option value="">Selecione</option>
+                  {listaEspecialidades.map((e) => <option key={e}>{e}</option>)}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <button
+                  onClick={buscar}
+                  className="w-full bg-[#0C77E1] hover:bg-[#0A66C7] text-white font-semibold p-4 rounded-xl"
+                >
+                  Buscar Clínicas
+                </button>
+                <button
+                  type="button"
+                  onClick={handleNearMeClick}
+                  className="w-full bg-white hover:bg-gray-100 text-[#0C77E1] border border-[#0C77E1] font-semibold p-4 rounded-xl"
+                >
+                  Perto de mim
+                </button>
+              </div>
+            </div>
+
+            <div className="bg-white border border-[#E4E6EA] rounded-2xl shadow-sm">
+              <button
+                className="w-full p-5 flex justify-between items-center text-left font-semibold text-[#0F1424] bg-[#F7F8FA] border-b border-[#E4E6EA]"
+                onClick={() => {
+                  setMapOpen(!mapOpen);
+                  setTimeout(() => {
+                    mapWrapperRef.current?.scrollIntoView({ behavior: "smooth" });
+                  }, 200);
+                }}
+              >
+                Mapa das Clínicas
+                <span>{mapOpen ? "▲" : "▼"}</span>
+              </button>
+
+              <div
+                ref={mapWrapperRef}
+                className="transition-all duration-500 overflow-hidden"
+                style={{ maxHeight: mapOpen ? "420px" : "0px", opacity: mapOpen ? 1 : 0 }}
+              >
+                <div
+                  ref={mapWrapperRef}
+                  className="transition-all duration-500 overflow-hidden"
+                  style={{ maxHeight: mapOpen ? "420px" : "0px" }}
+                >
+                  {mapOpen && (
+                    <div className="p-4">
+                      <MapPanel
+                        clinicas={resultados}
+                        selectedClinica={selectedClinica}
+                        onSelect={setSelectedClinica}
+                        userLocation={userLocation}
+                      />
+                    </div>
+                  )}
+                </div>
+
+              </div>
+            </div>
+
+            <div className="space-y-5">
+              {loading && <p className="text-lg animate-pulse">Carregando…</p>}
+
+              {!loading && resultados.length === 0 && (
+                <p className="text-center">Nenhuma clínica encontrada.</p>
+              )}
+
+              {resultados.slice(0, visibleCount).map((c) => (
+                <div
+                  key={c.clinica_id}
+                  className="bg-white border border-[#E4E6EA] rounded-2xl shadow-sm p-6"
+                >
+                  <div className="flex justify-between">
+
+                    <div>
+                      <h3 className="text-xl font-bold text-[#0C77E1]">
+                        {c.nome_fantasia}
+                      </h3>
+
+                      <p className="text-[#5A6275] mt-1">
+                        {c.logradouro} {c.numero}, {c.bairro}
+                      </p>
+
+                      <p className="text-[#5A6275]">{c.cidade}/{c.uf}</p>
+
+                      <p className="text-sm text-[#5A6275] mt-2">
+                        <strong className="text-[#0F1424]">Especialidades:</strong>{" "}
+                        {c.especialidades.join(", ")}
+                      </p>
+                    </div>
+
+                    <button
+                      className="px-4 py-2 bg-[#0C77E1] hover:bg-[#0A66C7] text-white rounded-xl"
+                      onClick={() => {
+                        setSelectedClinica(c);
+                        setMapOpen(true);
+                        setTimeout(() => {
+                          mapWrapperRef.current?.scrollIntoView({ behavior: "smooth" });
+                        }, 200);
+                      }}
+                    >
+                      Ver no mapa
+                    </button>
+
+                  </div>
+                </div>
+              ))}
+
+              {resultados.length > visibleCount && (
+                <div className="flex justify-center">
+                  <button
+                    onClick={() => setVisibleCount(prev => prev + 20)}
+                    className="w-full md:w-auto px-6 py-3 bg-[#0C77E1] hover:bg-[#0A66C7] text-white font-semibold rounded-xl"
+                  >
+                    Carregar Mais
+                  </button>
+                </div>
+              )}
+            </div>
+
           </div>
-        ))}
+        )}
+
       </div>
     </div>
   );
