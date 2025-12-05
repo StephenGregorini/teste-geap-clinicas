@@ -3,7 +3,6 @@ import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents } from "re
 import Supercluster from 'supercluster';
 import L from 'leaflet';
 
-import { clinicIcon } from "./mapIcons";
 import "leaflet/dist/leaflet.css";
 
 const defaultCenter = [-15.788497, -47.879873];
@@ -107,15 +106,17 @@ function MapPanel({ clinicas = [], selectedClinica, onSelect, userLocation }) {
 
           // 7. Se for um cluster, mostra o ícone de agrupamento
           if (isCluster) {
+            const clusterIcon = L.divIcon({
+              html: `<div style="display: flex; align-items: center; justify-content: center; width: 40px; height: 40px; background-color: #0C77E1; color: white; font-weight: 600; font-size: 14px; border-radius: 50%; box-shadow: 0 2px 6px rgba(0,0,0,0.3);">${pointCount}</div>`,
+              className: "bg-transparent border-0",
+              iconSize: [40, 40],
+            });
+
             return (
               <Marker
                 key={`cluster-${cluster.id}`}
                 position={[latitude, longitude]}
-                icon={L.divIcon({
-                  html: `<div class="flex items-center justify-center w-10 h-10 bg-blue-500 text-white font-bold rounded-full shadow-lg">${pointCount}</div>`,
-                  className: "bg-transparent border-0",
-                  iconSize: [40, 40],
-                })}
+                icon={clusterIcon}
                 eventHandlers={{
                   click: (e) => {
                     const expansionZoom = Math.min(supercluster.getClusterExpansionZoom(cluster.id), 18);
@@ -128,11 +129,18 @@ function MapPanel({ clinicas = [], selectedClinica, onSelect, userLocation }) {
           }
 
           // 8. Se for um ponto único, mostra o marcador da clínica
+          const clinicPointIcon = L.divIcon({
+            html: `<img src="https://cdn-icons-png.flaticon.com/512/1484/1484884.png" style="width: 32px; height: 32px; filter: drop-shadow(0 2px 3px rgba(0,0,0,0.3));">`,
+            className: "bg-transparent border-0",
+            iconSize: [32, 32],
+            iconAnchor: [16, 32] // Âncora na ponta inferior central do pino
+          });
+
           return (
             <Marker
               key={cluster.properties.clinica_id}
               position={[latitude, longitude]}
-              icon={clinicIcon}
+              icon={clinicPointIcon}
               eventHandlers={{ click: () => onSelect(cluster.properties) }}
             >
               <Popup>

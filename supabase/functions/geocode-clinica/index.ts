@@ -68,7 +68,7 @@ serve(async (req) => {
     const { lat, lon, type } = results[0];
 
     const { error: updateError } = await supabase
-      .from("clinicas")
+      .from("stg_amil_clinicas")
       .update({
         latitude: parseFloat(lat),
         longitude: parseFloat(lon),

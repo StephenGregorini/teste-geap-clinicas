@@ -7,7 +7,7 @@ const supabase = createClient(supabaseUrl, serviceRoleKey);
 
 serve(async () => {
   const { data, error } = await supabase
-    .from("clinicas")
+    .from("stg_amil_clinicas")
     .select("id, logradouro, numero, bairro, cidade, uf")
     .is("latitude", null);
 
@@ -17,7 +17,7 @@ serve(async () => {
     });
   }
 
-  return new Response(JSON.stringify({ total: data.length, clinicas: data }), {
+  return new Response(JSON.stringify({ total: data.length, stg_amil_clinicas: data }), {
     status: 200,
   });
 });
