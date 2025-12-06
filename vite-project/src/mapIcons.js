@@ -1,1 +1,0 @@
-// Arquivo obsoleto. O ícone do mapa agora é um divIcon definido em MapPanel.jsx
